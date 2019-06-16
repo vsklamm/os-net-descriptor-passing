@@ -7,10 +7,9 @@
 int main() {
     try {
         server serv;
-        serv.wait_client();
-        serv.accept_connection();
+        serv.wait_clients();
         serv.work();
     } catch (std::runtime_error &e) {
-        // std::cerr << e.what() << std::endl;
+        std::cerr << e.what() << std::endl;
     }
 }

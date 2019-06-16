@@ -1,7 +1,7 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
-#include <netinet/in.h>
+#include <sys/un.h>
 
 #include <string>
 
@@ -16,10 +16,12 @@ private:
     void create_socket();
     void detach(int fd);
 
-    void print_fatal_error(const std::string &err);
+    void print_fatal_error(const std::string &err, bool perr = true);
 
     int client_fd = 0;
-    struct sockaddr_in serv_addr;
+    struct sockaddr_un client_addr;
+
+    const std::string SOCK_NAME = "./sock";
 };
 
 #endif  // CLIENT_H

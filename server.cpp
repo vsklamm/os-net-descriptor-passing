@@ -9,82 +9,69 @@
 #include "server.h"
 
 server::server() {
+    server_address.sun_family = AF_UNIX;
+    memcpy(server_address.sun_path, SOCK_NAME.c_str(), SOCK_NAME.size() + 1);
     unlink(SOCK_NAME.c_str());
+
     create_socket();
     bind_to_address();
 }
 
-void server::wait_client() {
-    if (listen(server_fd, 10) < 0) {
+void server::wait_clients() {
+    if (listen(server_fd, 10) == -1) {
         detach(server_fd);
         print_fatal_error("listen");
     }
 }
 
-void server::accept_connection() {
+void server::work() {
     for (;;) {
         if ((new_socket = accept(server_fd, nullptr, nullptr)) < 0) {
             print_fatal_error("accept");
         }
         int pipefd[2];
         try_create_pipe(pipefd);
-        struct msghdr msg = { 0 };
-        struct cmsghdr * cmsg;
         char iobuf[1];
-        struct iovec io = { .iov_base = iobuf, .iov_len = sizeof(iobuf) };
+        struct iovec io = {.iov_base = iobuf, .iov_len = sizeof(iobuf)};
+
+        struct msghdr msg = {0};
+        struct cmsghdr *cmsg;
         union {
-            char buf[CMSG_SPACE(sizeof(pipefd[1]))];
             struct cmsghdr align;
+            char buf[CMSG_SPACE(sizeof(pipefd[1]))];
         } u;
+
         msg.msg_iov = &io;
         msg.msg_iovlen = 1;
         msg.msg_control = u.buf;
         msg.msg_controllen = sizeof(u.buf);
+
         cmsg = CMSG_FIRSTHDR(&msg);
-        cmsg->cmsg_type = SCM_RIGHTS;
-        cmsg->cmsg_level = SOL_SOCKET;
         cmsg->cmsg_len = CMSG_LEN(sizeof(pipefd[1]));
+        cmsg->cmsg_level = SOL_SOCKET;
+        cmsg->cmsg_type = SCM_RIGHTS;
         memcpy(CMSG_DATA(cmsg), &pipefd[1], sizeof(pipefd[1]));
 
         std::array<char, CMSG_SPACE(sizeof pipefd[1])> buffer;
         int res_sent = sendmsg(new_socket, &msg, 0);
         if (res_sent == -1) {
-            perror("Send message failed");
+            perror("send message failed");
         }
-        detach(pipefd[1]);
-        std::cout << buffer.data() << std::endl;
+        std::cout << "server: ";
         while (read(pipefd[0], &buffer, 1) > 0) {
             write(STDOUT_FILENO, &buffer, 1);
         }
+
+        detach(pipefd[1]);
         detach(pipefd[0]);
         detach(new_socket);
     }
 }
 
-void server::work() {
-    const std::string hello = "hello, client";
-    std::array<char, 1024> buffer;
-    read(new_socket, buffer.data(), buffer.size());
-    std::cout << buffer.data() << std::endl;
-
-    const int flags = 0;
-    send(new_socket, hello.c_str(), hello.size(), flags);
-    std::cout << "server: sent" << std::endl;
-}
-
-void server::check_ipv4(const std::string &address) {
-    struct sockaddr_in sa;
-    if (inet_pton(AF_INET, address.c_str(), &(sa.sin_addr)) == 0) {
-        std::cerr << "server: invalid ipv4 address" << std::endl;
-        throw std::runtime_error("invalid ipv4 address");
-    }
-}
-
 void server::create_socket() {
-    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        perror("socket failed");
+    if ((server_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+        print_fatal_error("socket failed");
     }
-    std::cout << "socket: " << server_fd << std::endl;
 }
 
 void server::bind_to_address() {
@@ -95,12 +82,10 @@ void server::bind_to_address() {
     }
 }
 
-void server::try_create_pipe(int * pipefd)
-{
+void server::try_create_pipe(int *pipefd) {
     int pipest = pipe(pipefd);
     if (pipest == -1) {
-        std::cerr << "oops" << std::endl;
-        exit(EXIT_FAILURE);
+        print_fatal_error("pipe failed", false);
     }
 }
 
@@ -110,7 +95,7 @@ void server::detach(int fd) {
     }
 }
 
-void server::print_fatal_error(const std::string &err) {
-    perror(err.c_str());
-    throw std::runtime_error("server: " + err);
+void server::print_fatal_error(const std::string &err, bool perr) {
+    throw std::runtime_error("server error: " + err +
+                             (perr ? std::string(": ") + strerror(errno) : ""));
 }

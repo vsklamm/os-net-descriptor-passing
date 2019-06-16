@@ -10,6 +10,6 @@ int main() {
         cl.connect_to_server();
         cl.work();
     } catch (std::runtime_error &e) {
-        // std::cerr << e.what() << std::endl;
+       std::cerr << e.what() << std::endl;
     }
 }
